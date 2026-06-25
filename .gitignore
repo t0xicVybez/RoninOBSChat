@@ -1,0 +1,8 @@
+build/
+package/
+*.zip
+*.user
+.vs/
+CMakeSettings.json
+CMakeCache.txt
+CMakeFiles/
