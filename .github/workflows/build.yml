@@ -11,6 +11,8 @@ jobs:
   build-windows:
     name: Windows x64
     runs-on: windows-2022
+    permissions:
+      contents: write
     defaults:
       run:
         shell: pwsh
