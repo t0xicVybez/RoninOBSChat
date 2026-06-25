@@ -20,33 +20,30 @@ A native OBS Studio plugin that connects to your YouTube live chat and provides:
 
 1. Go to the [Releases](../../releases) page and download the latest `RoninOBSChat-*-windows-x64.zip`
 
-2. Extract the ZIP — it contains a `RoninOBSChat` folder with `bin` and `data` subfolders
-
-3. Open the extracted `RoninOBSChat\bin\64bit\` folder. Copy the files into your OBS installation:
-
-   | File in ZIP | Copy to |
-   |---|---|
-   | `RoninOBSChat\bin\64bit\RoninOBSChat.dll` | `C:\Program Files\obs-studio\obs-plugins\64bit\` |
-   | `RoninOBSChat\bin\64bit\tls\qschannelbackend.dll` | `C:\Program Files\obs-studio\obs-plugins\64bit\tls\` (create the `tls` folder if it does not exist) |
-   | `RoninOBSChat\data\` (entire folder) | `C:\Program Files\obs-studio\data\obs-plugins\RoninOBSChat\` |
-
-   The final layout should look like:
-
+2. Extract the ZIP — you will see:
    ```
-   C:\Program Files\obs-studio\
-   ├── obs-plugins\
-   │   └── 64bit\
-   │       ├── RoninOBSChat.dll
-   │       └── tls\
-   │           └── qschannelbackend.dll
-   └── data\
-       └── obs-plugins\
-           └── RoninOBSChat\
-               └── locale\
-                   └── en-US.ini
+   RoninOBSChat.dll
+   tls\
+       qschannelbackend.dll
+   locale\
+       en-US.ini
    ```
 
-   > You may need administrator rights to copy files into `C:\Program Files\`.
+3. Copy everything from the ZIP directly into:
+   ```
+   C:\Program Files\obs-studio\obs-plugins\64bit\
+   ```
+   The final result should look like:
+   ```
+   C:\Program Files\obs-studio\obs-plugins\64bit\
+   ├── RoninOBSChat.dll
+   ├── tls\
+   │   └── qschannelbackend.dll
+   └── locale\
+       └── en-US.ini
+   ```
+
+   > You may need administrator rights to paste into `C:\Program Files\`.
 
 4. Restart OBS Studio
 

@@ -45,7 +45,18 @@ jobs:
           $name    = $spec.name
           $version = $spec.version
           $zip     = "${name}-${version}-windows-x64.zip"
-          Compress-Archive -Path "release/RelWithDebInfo/*" -DestinationPath $zip -Force
+
+          # Flatten to a layout users can drop directly into obs-plugins/64bit/
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item "release/RelWithDebInfo/$name/bin/64bit/$name.dll" dist/
+          if (Test-Path "release/RelWithDebInfo/$name/bin/64bit/tls") {
+            Copy-Item "release/RelWithDebInfo/$name/bin/64bit/tls" dist/tls -Recurse
+          }
+          if (Test-Path "release/RelWithDebInfo/$name/data/locale") {
+            Copy-Item "release/RelWithDebInfo/$name/data/locale" dist/locale -Recurse
+          }
+
+          Compress-Archive -Path "dist/*" -DestinationPath $zip -Force
           Write-Host "Created $zip"
           echo "zip=$zip" >> $env:GITHUB_OUTPUT
           echo "version=$version" >> $env:GITHUB_OUTPUT
