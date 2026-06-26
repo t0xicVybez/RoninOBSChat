@@ -38,11 +38,18 @@ public:
     void deleteMessage(const QString &messageId);
     void timeoutUser(const QString &channelId, int durationSeconds);
     void banUser(const QString &channelId);
+    void liftBan(const QString &banId);
 
 signals:
     void messagesReceived(const QList<ChatMessage> &messages);
     void connectionChanged(bool connected);
     void errorOccurred(const QString &msg);
+
+    // Emitted once a ban/timeout is actually created on YouTube. The banId is
+    // required to lift it again — it is the only handle YouTube gives us.
+    void banCreated(const QString &channelId, const QString &banId,
+                    bool temporary, int durationSeconds);
+    void banLifted(const QString &banId);
 
     // Device-flow progress
     void deviceFlowReady(const QString &verificationUrl, const QString &userCode);
@@ -70,4 +77,9 @@ private:
 
     bool m_connected = false;
     int  m_pollingIntervalMs = 5000;
+
+    // Connect-time gating: the first poll returns recent chat history, which we
+    // must never moderate. Anything before m_connectedAt is flagged historical.
+    QDateTime m_connectedAt;
+    bool      m_firstPoll = true;
 };

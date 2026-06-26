@@ -30,6 +30,7 @@ SettingsDialog::SettingsDialog(ChatBot *bot, QWidget *parent)
     tabs->addTab(buildYouTubeTab(),  "YouTube");
     tabs->addTab(buildCommandsTab(), "Commands");
     tabs->addTab(buildTimersTab(),   "Timers");
+    tabs->addTab(buildAutoModTab(),  "AutoMod");
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
     connect(buttons, &QDialogButtonBox::accepted, this, &SettingsDialog::onSave);
@@ -41,6 +42,7 @@ SettingsDialog::SettingsDialog(ChatBot *bot, QWidget *parent)
 
     loadCommandsTable();
     loadTimersTable();
+    loadAutoModTable();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -436,6 +438,147 @@ void SettingsDialog::onRemoveTimer()
         == QMessageBox::Yes) {
         m_bot->timers()->removeMessage(row);
         loadTimersTable();
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AutoMod tab
+// ─────────────────────────────────────────────────────────────────────────────
+
+QWidget *SettingsDialog::buildAutoModTab()
+{
+    auto *w      = new QWidget;
+    auto *layout = new QVBoxLayout(w);
+
+    auto *helpLabel = new QLabel(
+        "Rules are checked in order; mods and the broadcaster are always exempt. "
+        "Timeouts and bans appear in the dock's <b>Active timeouts / bans</b> list "
+        "with a Lift button, and mods can type <code>!untimeout &lt;name&gt;</code> "
+        "or <code>!unban &lt;name&gt;</code> in chat. (YouTube has no native way to "
+        "undo a timeout, so the bot handles it.)"
+    );
+    helpLabel->setWordWrap(true);
+    layout->addWidget(helpLabel);
+
+    m_autoModTable = new QTableWidget(0, 5, w);
+    m_autoModTable->setHorizontalHeaderLabels({"Label", "Pattern", "Regex", "Action", "Timeout (s)"});
+    m_autoModTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    m_autoModTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_autoModTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    layout->addWidget(m_autoModTable);
+
+    auto *btnRow = new QHBoxLayout;
+    auto *addBtn  = new QPushButton("Add");
+    auto *editBtn = new QPushButton("Edit");
+    auto *delBtn  = new QPushButton("Remove");
+    btnRow->addWidget(addBtn);
+    btnRow->addWidget(editBtn);
+    btnRow->addWidget(delBtn);
+    btnRow->addStretch();
+    layout->addLayout(btnRow);
+
+    connect(addBtn,  &QPushButton::clicked, this, &SettingsDialog::onAddRule);
+    connect(editBtn, &QPushButton::clicked, this, &SettingsDialog::onEditRule);
+    connect(delBtn,  &QPushButton::clicked, this, &SettingsDialog::onRemoveRule);
+
+    return w;
+}
+
+void SettingsDialog::loadAutoModTable()
+{
+    static const char *actionNames[] = {"None", "Delete", "Timeout", "Ban"};
+    m_autoModTable->setRowCount(0);
+
+    for (const auto &rule : m_bot->automod()->rules()) {
+        int row = m_autoModTable->rowCount();
+        m_autoModTable->insertRow(row);
+        m_autoModTable->setItem(row, 0, new QTableWidgetItem(rule.label));
+        m_autoModTable->setItem(row, 1, new QTableWidgetItem(rule.pattern));
+        m_autoModTable->setItem(row, 2, new QTableWidgetItem(rule.isRegex ? "Yes" : "No"));
+        m_autoModTable->setItem(row, 3, new QTableWidgetItem(actionNames[static_cast<int>(rule.action)]));
+        m_autoModTable->setItem(row, 4, new QTableWidgetItem(
+            rule.action == AutoModAction::TimeoutUser ? QString::number(rule.timeoutSecs) : "—"));
+    }
+}
+
+static QDialog *buildRuleDialog(AutoModRule &rule, QWidget *parent, const QString &title)
+{
+    auto *dlg  = new QDialog(parent);
+    dlg->setWindowTitle(title);
+    auto *form = new QFormLayout(dlg);
+
+    auto *labelEdit     = new QLineEdit(rule.label);
+    auto *patternEdit   = new QLineEdit(rule.pattern);
+    auto *regexBox      = new QCheckBox("Pattern is a regular expression");
+    auto *caseBox       = new QCheckBox("Case sensitive");
+    auto *actionCombo   = new QComboBox;
+    auto *timeoutSpin   = new QSpinBox;
+
+    regexBox->setChecked(rule.isRegex);
+    caseBox->setChecked(rule.caseSensitive);
+    actionCombo->addItems({"Delete Message", "Timeout User", "Ban User"});
+    actionCombo->setCurrentIndex(qMax(0, static_cast<int>(rule.action) - 1));
+    timeoutSpin->setRange(1, 86400);
+    timeoutSpin->setSuffix(" s");
+    timeoutSpin->setValue(rule.timeoutSecs);
+
+    form->addRow("Label (friendly name):", labelEdit);
+    form->addRow("Pattern:", patternEdit);
+    form->addRow("", regexBox);
+    form->addRow("", caseBox);
+    form->addRow("Action:", actionCombo);
+    form->addRow("Timeout duration:", timeoutSpin);
+
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    form->addRow(buttons);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, dlg, [=, &rule]() {
+        rule.label         = labelEdit->text().trimmed();
+        rule.pattern       = patternEdit->text().trimmed();
+        rule.isRegex       = regexBox->isChecked();
+        rule.caseSensitive = caseBox->isChecked();
+        rule.action        = static_cast<AutoModAction>(actionCombo->currentIndex() + 1);
+        rule.timeoutSecs   = timeoutSpin->value();
+        dlg->accept();
+    });
+    QObject::connect(buttons, &QDialogButtonBox::rejected, dlg, &QDialog::reject);
+
+    return dlg;
+}
+
+void SettingsDialog::onAddRule()
+{
+    AutoModRule rule;
+    auto *dlg = buildRuleDialog(rule, this, "Add AutoMod Rule");
+    if (dlg->exec() == QDialog::Accepted && !rule.pattern.isEmpty()) {
+        m_bot->automod()->addRule(rule);
+        loadAutoModTable();
+    }
+    delete dlg;
+}
+
+void SettingsDialog::onEditRule()
+{
+    int row = m_autoModTable->currentRow();
+    if (row < 0 || row >= m_bot->automod()->rules().size()) return;
+
+    AutoModRule rule = m_bot->automod()->rules()[row];
+    auto *dlg = buildRuleDialog(rule, this, "Edit AutoMod Rule");
+    if (dlg->exec() == QDialog::Accepted) {
+        m_bot->automod()->updateRule(row, rule);
+        loadAutoModTable();
+    }
+    delete dlg;
+}
+
+void SettingsDialog::onRemoveRule()
+{
+    int row = m_autoModTable->currentRow();
+    if (row < 0) return;
+
+    if (QMessageBox::question(this, "Remove Rule", "Remove this AutoMod rule?")
+        == QMessageBox::Yes) {
+        m_bot->automod()->removeRule(row);
+        loadAutoModTable();
     }
 }
 

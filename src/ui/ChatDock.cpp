@@ -1,8 +1,10 @@
 #include "ChatDock.hpp"
 #include "SettingsDialog.hpp"
 
+#include <QDateTime>
 #include <QHBoxLayout>
 #include <QListWidgetItem>
+#include <QTimer>
 #include <QVBoxLayout>
 
 ChatDock::ChatDock(ChatBot *bot, QWidget *parent)
@@ -43,6 +45,23 @@ ChatDock::ChatDock(ChatBot *bot, QWidget *parent)
     );
     layout->addWidget(m_chatView);
 
+    // ── Moderation panel ──────────────────────────────────────────────────────
+    auto *modLabel = new QLabel("Active timeouts / bans", root);
+    modLabel->setStyleSheet("color: #aaa; font-weight: bold; margin-top: 4px;");
+    layout->addWidget(modLabel);
+
+    m_modList = new QListWidget(root);
+    m_modList->setMaximumHeight(110);
+    m_modList->setStyleSheet(
+        "QListWidget { background: #1a1a1a; color: #ececec; border: 1px solid #2a2a2a; }"
+        "QListWidget::item { padding: 2px 6px; }"
+    );
+    layout->addWidget(m_modList);
+
+    m_liftBtn = new QPushButton("Lift selected", root);
+    m_liftBtn->setEnabled(false);
+    layout->addWidget(m_liftBtn);
+
     setWidget(root);
 
     // ── Connections ───────────────────────────────────────────────────────────
@@ -55,10 +74,30 @@ ChatDock::ChatDock(ChatBot *bot, QWidget *parent)
             this, &ChatDock::onMessageReceived);
     connect(m_bot, &ChatBot::botSentMessage,
             this, &ChatDock::onBotSentMessage);
+    connect(m_bot, &ChatBot::autoModActionTaken,
+            this, &ChatDock::onAutoModAction);
     connect(m_bot->youtube(), &YouTubeClient::errorOccurred,
             this, [this](const QString &err) {
                 appendLine(QStringLiteral("<span style='color:#e05252'>⚠ %1</span>").arg(err.toHtmlEscaped()));
             });
+
+    // Moderation panel wiring
+    connect(m_bot->moderation(), &ModerationLog::changed,
+            this, &ChatDock::refreshModeration);
+    connect(m_liftBtn, &QPushButton::clicked, this, &ChatDock::onLiftSelected);
+    connect(m_modList, &QListWidget::itemSelectionChanged, this, [this]() {
+        m_liftBtn->setEnabled(m_modList->currentItem() != nullptr);
+    });
+
+    // Periodically expire timeouts that YouTube has already auto-lifted.
+    auto *pruneTimer = new QTimer(this);
+    pruneTimer->setInterval(10000);
+    connect(pruneTimer, &QTimer::timeout, this, [this]() {
+        m_bot->moderation()->pruneExpired();
+    });
+    pruneTimer->start();
+
+    refreshModeration();
 }
 
 // ── Slots ─────────────────────────────────────────────────────────────────────
@@ -97,6 +136,61 @@ void ChatDock::onBotSentMessage(const QString &text)
         "<span style='color:#888'>: </span>"
         "<span>%1</span>"
     ).arg(text.toHtmlEscaped()));
+}
+
+void ChatDock::onAutoModAction(const ChatMessage &msg, const AutoModResult &result)
+{
+    QString action;
+    switch (result.action) {
+    case AutoModAction::DeleteMessage: action = "deleted message of"; break;
+    case AutoModAction::TimeoutUser:   action = QStringLiteral("timed out (%1s)").arg(result.timeoutSecs); break;
+    case AutoModAction::BanUser:       action = "banned"; break;
+    default: break;
+    }
+
+    appendLine(QStringLiteral(
+        "<span style='color:#e07c52'>🛡 AutoMod: %1 %2 [rule: %3]</span>"
+    ).arg(action, msg.authorDisplayName.toHtmlEscaped(), result.matchedRule.toHtmlEscaped()));
+}
+
+void ChatDock::refreshModeration()
+{
+    m_modList->clear();
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+
+    for (const auto &e : m_bot->moderation()->entries()) {
+        QString detail;
+        if (e.temporary) {
+            qint64 remaining = e.expiresAt.isValid() ? now.secsTo(e.expiresAt) : 0;
+            if (remaining < 0) remaining = 0;
+            detail = QStringLiteral("Timeout · %1s left").arg(remaining);
+        } else {
+            detail = "Banned";
+        }
+
+        QString label = QStringLiteral("%1 — %2 [%3]")
+                            .arg(e.displayName, detail, e.matchedRule);
+        if (e.banId.isEmpty())
+            label += "  (applying…)";
+
+        auto *item = new QListWidgetItem(label, m_modList);
+        item->setData(Qt::UserRole, e.banId); // empty until YouTube responds
+    }
+
+    m_liftBtn->setEnabled(m_modList->currentItem() != nullptr);
+}
+
+void ChatDock::onLiftSelected()
+{
+    auto *item = m_modList->currentItem();
+    if (!item) return;
+
+    const QString banId = item->data(Qt::UserRole).toString();
+    if (banId.isEmpty()) {
+        appendLine("<span style='color:#e0a052'>Ban still applying — try again in a moment.</span>");
+        return;
+    }
+    m_bot->youtube()->liftBan(banId);
 }
 
 void ChatDock::onConnectClicked()

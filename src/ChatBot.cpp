@@ -12,6 +12,8 @@ ChatBot::ChatBot(QObject *parent)
     , m_youtube(new YouTubeClient(this))
     , m_commands(new CommandHandler(this))
     , m_timers(new TimedMessages(this))
+    , m_automod(new AutoMod(this))
+    , m_moderation(new ModerationLog(this))
 {
     connect(m_youtube, &YouTubeClient::messagesReceived,
             this, &ChatBot::onMessagesReceived);
@@ -21,6 +23,27 @@ ChatBot::ChatBot(QObject *parent)
 
     connect(m_timers, &TimedMessages::sendMessage,
             this, &ChatBot::onTimedMessage);
+
+    // Keep the moderation log in sync with what actually happened on YouTube:
+    // fill in ban ids when they come back, and drop entries when lifted.
+    connect(m_youtube, &YouTubeClient::banCreated, this,
+            [this](const QString &channelId, const QString &banId, bool, int) {
+                m_moderation->attachBanId(channelId, banId);
+            });
+    connect(m_youtube, &YouTubeClient::banLifted,
+            m_moderation, &ModerationLog::removeByBanId);
+}
+
+// Bounded de-dup: remember up to 2000 recent message ids so a message is only
+// ever acted on once. The set is cleared on (re)connect in onConnectionChanged.
+bool ChatBot::markSeen(const QString &id)
+{
+    if (id.isEmpty() || m_seenIds.contains(id)) return false;
+    m_seenIds.insert(id);
+    m_seenOrder.enqueue(id);
+    if (m_seenOrder.size() > 2000)
+        m_seenIds.remove(m_seenOrder.dequeue());
+    return true;
 }
 
 // ── Routing ───────────────────────────────────────────────────────────────────
@@ -28,15 +51,86 @@ ChatBot::ChatBot(QObject *parent)
 void ChatBot::onMessagesReceived(const QList<ChatMessage> &messages)
 {
     for (const auto &msg : messages) {
-        emit messageReceived(msg);
+        emit messageReceived(msg); // always display, even history
 
-        // Command processing
+        // Never moderate or run commands on backlog, and never act on the same
+        // message twice (overlapping pages / reconnect).
+        if (msg.isHistorical) continue;
+        if (!markSeen(msg.id))  continue;
+
+        // Moderator lift commands take priority over everything else.
+        if (handleModerationCommand(msg))
+            continue;
+
+        // ── AutoMod (mods/owner are exempt inside check()) ──────────────────
+        AutoModResult result = m_automod->check(msg);
+        if (result.action != AutoModAction::None) {
+            switch (result.action) {
+            case AutoModAction::DeleteMessage:
+                m_youtube->deleteMessage(msg.id);
+                break;
+            case AutoModAction::TimeoutUser:
+                // One active ban per user — don't stack on a message burst.
+                if (!m_moderation->hasActiveBan(msg.authorChannelId)) {
+                    m_youtube->timeoutUser(msg.authorChannelId, result.timeoutSecs);
+                    m_moderation->recordPending(msg.authorChannelId, msg.authorDisplayName,
+                                                "Timeout", result.matchedRule,
+                                                true, result.timeoutSecs);
+                }
+                break;
+            case AutoModAction::BanUser:
+                if (!m_moderation->hasActiveBan(msg.authorChannelId)) {
+                    m_youtube->banUser(msg.authorChannelId);
+                    m_moderation->recordPending(msg.authorChannelId, msg.authorDisplayName,
+                                                "Ban", result.matchedRule, false, 0);
+                }
+                break;
+            default: break;
+            }
+            emit autoModActionTaken(msg, result);
+            continue; // moderated messages don't run commands
+        }
+
+        // ── Commands ────────────────────────────────────────────────────────
         QString response;
         if (m_commands->process(msg, response)) {
             m_youtube->sendMessage(response);
             emit botSentMessage(response);
         }
     }
+}
+
+bool ChatBot::handleModerationCommand(const ChatMessage &msg)
+{
+    if (!(msg.authorIsModerator || msg.authorIsOwner))
+        return false;
+
+    const QString text = msg.text.trimmed();
+    const QString lower = text.toLower();
+    if (!lower.startsWith("!untimeout") && !lower.startsWith("!unban"))
+        return false;
+
+    // Everything after the command word is the target display name (with or
+    // without a leading @). YouTube gives us no channelId for plain @mentions,
+    // so we match by the display name we stored when we issued the ban.
+    int sp = text.indexOf(' ');
+    QString target = sp >= 0 ? text.mid(sp + 1).trimmed() : QString();
+    if (target.startsWith('@')) target.remove(0, 1);
+
+    if (target.isEmpty()) {
+        m_youtube->sendMessage("Usage: !untimeout <name>  (or !unban <name>)");
+        return true;
+    }
+
+    QString banId = m_moderation->banIdForName(target);
+    if (banId.isEmpty()) {
+        m_youtube->sendMessage(QStringLiteral("No active timeout/ban found for %1.").arg(target));
+        return true;
+    }
+
+    m_youtube->liftBan(banId);
+    m_youtube->sendMessage(QStringLiteral("Lifted timeout/ban for %1.").arg(target));
+    return true;
 }
 
 void ChatBot::onTimedMessage(const QString &text)
@@ -48,6 +142,8 @@ void ChatBot::onTimedMessage(const QString &text)
 void ChatBot::onConnectionChanged(bool connected)
 {
     if (connected) {
+        m_seenIds.clear();
+        m_seenOrder.clear();
         m_timers->startAll();
     } else {
         m_timers->stopAll();
@@ -95,6 +191,9 @@ void ChatBot::loadConfig()
     if (doc.contains("timers"))
         m_timers->fromJson(doc["timers"].toArray());
 
+    if (doc.contains("automod"))
+        m_automod->fromJson(doc["automod"].toArray());
+
     blog(LOG_INFO, "[RoninOBSChat] Config loaded from %s", path.toUtf8().constData());
 }
 
@@ -113,6 +212,7 @@ void ChatBot::saveConfig()
 
     doc["commands"] = m_commands->toJson();
     doc["timers"]   = m_timers->toJson();
+    doc["automod"]  = m_automod->toJson();
 
     QString path = configFilePath();
     QDir().mkpath(QFileInfo(path).absolutePath());

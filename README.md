@@ -4,6 +4,7 @@ A native OBS Studio plugin that connects to your YouTube live chat and provides:
 
 - **Chat Commands** — respond to `!commands` with custom replies, per-user cooldowns, and permission levels
 - **Timed Messages** — automatically post messages on a configurable interval
+- **AutoMod** — keyword/regex rules that delete messages, timeout, or ban users, with one-click un-timeout
 
 ---
 
@@ -97,6 +98,37 @@ In Settings → Timers, add a row with:
 | Interval | How often to post it (seconds) |
 
 Timers start automatically when you connect and stop when you disconnect.
+
+### AutoMod
+
+In Settings → AutoMod, add a rule with:
+
+| Field | Description |
+|---|---|
+| Label | A friendly name shown in logs and the rule list |
+| Pattern | A plain keyword or a regular expression |
+| Regex | Enable if the pattern is a regex |
+| Case sensitive | Toggle case sensitivity |
+| Action | Delete message / Timeout user / Ban user |
+| Timeout (s) | Duration for timeout actions |
+
+Rules are checked in order. **Moderators and the broadcaster are always exempt.**
+Only messages sent *after* you connect are moderated — the chat history pulled on
+connect is shown but never punished retroactively.
+
+#### Lifting a timeout or ban
+
+YouTube provides no native way to undo a *timeout* (temporary bans simply expire),
+so the plugin tracks every action it takes and lets you reverse it:
+
+- **In the dock** — the **Active timeouts / bans** list shows everyone the bot has
+  actioned this session. Select a row and click **Lift selected** to free them
+  immediately.
+- **In chat** — a moderator or the broadcaster can type
+  `!untimeout <name>` or `!unban <name>` to lift it without leaving the stream.
+
+> Permanent bans also appear under **Hidden users** in YouTube Studio and can be
+> un-hidden there directly. Timeouts can only be lifted via the methods above.
 
 ---
 

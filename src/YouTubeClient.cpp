@@ -215,7 +215,9 @@ void YouTubeClient::fetchLiveChatId()
         blog(LOG_INFO, "[RoninOBSChat] Live chat ID: %s",
              m_liveChatId.toUtf8().constData());
 
-        m_connected = true;
+        m_connected   = true;
+        m_connectedAt = QDateTime::currentDateTimeUtc();
+        m_firstPoll   = true;
         emit connectionChanged(true);
         m_pollTimer->setInterval(m_pollingIntervalMs);
         m_pollTimer->start();
@@ -270,8 +272,14 @@ void YouTubeClient::pollMessages()
             msg.authorDisplayName  = author["displayName"].toString();
             msg.authorIsModerator  = author["isChatModerator"].toBool();
             msg.authorIsOwner      = author["isChatOwner"].toBool();
+
+            // The first poll is the backlog snapshot; also guard on timestamp so
+            // a reconnect can never re-moderate messages from before we connected.
+            msg.isHistorical = m_firstPoll ||
+                               (msg.publishedAt.isValid() && msg.publishedAt < m_connectedAt);
             messages.append(msg);
         }
+        m_firstPoll = false;
         emit messagesReceived(messages);
     });
 }
@@ -312,8 +320,10 @@ void YouTubeClient::deleteMessage(const QString &messageId)
     url.setQuery(q);
 
     auto *reply = m_nam->deleteResource(authorizedRequest(url));
-    connect(reply, &QNetworkReply::finished, this, [reply]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError)
+            emit errorOccurred("Delete failed: " + QString::fromUtf8(reply->readAll()));
     });
 }
 
@@ -337,8 +347,15 @@ void YouTubeClient::timeoutUser(const QString &channelId, int durationSeconds)
 
     auto *reply = m_nam->post(authorizedRequest(url),
                               QJsonDocument(body).toJson(QJsonDocument::Compact));
-    connect(reply, &QNetworkReply::finished, this, [reply]() {
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply, channelId, durationSeconds]() {
         reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) {
+            emit errorOccurred("Timeout failed: " + QString::fromUtf8(reply->readAll()));
+            return;
+        }
+        auto doc = QJsonDocument::fromJson(reply->readAll()).object();
+        emit banCreated(channelId, doc["id"].toString(), true, durationSeconds);
     });
 }
 
@@ -361,7 +378,33 @@ void YouTubeClient::banUser(const QString &channelId)
 
     auto *reply = m_nam->post(authorizedRequest(url),
                               QJsonDocument(body).toJson(QJsonDocument::Compact));
-    connect(reply, &QNetworkReply::finished, this, [reply]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, channelId]() {
         reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) {
+            emit errorOccurred("Ban failed: " + QString::fromUtf8(reply->readAll()));
+            return;
+        }
+        auto doc = QJsonDocument::fromJson(reply->readAll()).object();
+        emit banCreated(channelId, doc["id"].toString(), false, 0);
+    });
+}
+
+void YouTubeClient::liftBan(const QString &banId)
+{
+    if (!m_connected || banId.isEmpty()) return;
+
+    QUrl url(kBansUrl);
+    QUrlQuery q;
+    q.addQueryItem("id", banId);
+    url.setQuery(q);
+
+    auto *reply = m_nam->deleteResource(authorizedRequest(url));
+    connect(reply, &QNetworkReply::finished, this, [this, reply, banId]() {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) {
+            emit errorOccurred("Lift failed: " + QString::fromUtf8(reply->readAll()));
+            return;
+        }
+        emit banLifted(banId);
     });
 }

@@ -30,6 +30,11 @@ private slots:
     void onEditTimer();
     void onRemoveTimer();
 
+    // AutoMod tab
+    void onAddRule();
+    void onEditRule();
+    void onRemoveRule();
+
     // Dialog
     void onSave();
 
@@ -37,9 +42,11 @@ private:
     QWidget *buildYouTubeTab();
     QWidget *buildCommandsTab();
     QWidget *buildTimersTab();
+    QWidget *buildAutoModTab();
 
     void loadCommandsTable();
     void loadTimersTable();
+    void loadAutoModTable();
 
     ChatBot *m_bot;
 
@@ -54,4 +61,7 @@ private:
 
     // Timers tab
     QTableWidget *m_timersTable;
+
+    // AutoMod tab
+    QTableWidget *m_autoModTable;
 };
