@@ -202,6 +202,11 @@ void YouTubeClient::fetchLiveChatId()
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError) {
+            int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+            QString errBody = QString::fromUtf8(reply->readAll());
+            blog(LOG_WARNING, "[RoninOBSChat] Fetch broadcast failed: http=%d qterr=%s body=%s",
+                 status, reply->errorString().toUtf8().constData(),
+                 errBody.toUtf8().constData());
             emit errorOccurred("Failed to fetch broadcast: " + reply->errorString());
             return;
         }
@@ -245,6 +250,11 @@ void YouTubeClient::pollMessages()
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError) {
+            int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+            QString errBody = QString::fromUtf8(reply->readAll());
+            blog(LOG_WARNING, "[RoninOBSChat] Poll failed: http=%d qterr=%s body=%s",
+                 status, reply->errorString().toUtf8().constData(),
+                 errBody.toUtf8().constData());
             emit errorOccurred("Poll error: " + reply->errorString());
             return;
         }
