@@ -103,6 +103,23 @@ QWidget *SettingsDialog::buildYouTubeTab()
     connect(m_bot->youtube(), &YouTubeClient::deviceFlowFailed,
             this, &SettingsDialog::onDeviceFlowFailed);
 
+    // Quota / polling
+    auto *quotaGroup = new QGroupBox("API Quota");
+    auto *quotaForm  = new QFormLayout(quotaGroup);
+    m_pollIntervalSpin = new QSpinBox;
+    m_pollIntervalSpin->setRange(5, 300);
+    m_pollIntervalSpin->setSuffix(" s");
+    m_pollIntervalSpin->setValue(m_bot->youtube()->minPollIntervalSecs());
+    quotaForm->addRow("Chat poll interval:", m_pollIntervalSpin);
+    auto *quotaHelp = new QLabel(
+        "Higher = fewer API calls = less daily quota used (but slower command/"
+        "AutoMod response). The free YouTube quota is 10,000 units/day; each poll "
+        "costs ~5. 10s suits most streams."
+    );
+    quotaHelp->setWordWrap(true);
+    quotaForm->addRow(quotaHelp);
+    layout->addWidget(quotaGroup);
+
     layout->addStretch();
     return w;
 }
@@ -588,6 +605,7 @@ void SettingsDialog::onRemoveRule()
 
 void SettingsDialog::onSave()
 {
+    m_bot->youtube()->setMinPollIntervalSecs(m_pollIntervalSpin->value());
     m_bot->saveConfig();
     accept();
 }

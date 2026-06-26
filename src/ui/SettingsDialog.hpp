@@ -3,6 +3,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QSpinBox>
 #include <QTableWidget>
 #include <QTabWidget>
 #include "../ChatBot.hpp"
@@ -55,6 +56,7 @@ private:
     QLineEdit   *m_clientSecretEdit;
     QPushButton *m_authBtn;
     QLabel      *m_authStatusLabel;
+    QSpinBox    *m_pollIntervalSpin;
 
     // Commands tab
     QTableWidget *m_commandsTable;

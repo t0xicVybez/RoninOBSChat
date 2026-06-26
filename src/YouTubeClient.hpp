@@ -30,6 +30,11 @@ public:
     void connectToStream();
     void disconnectFromStream();
 
+    // Minimum seconds between chat polls. Polling is the dominant quota cost
+    // (~5 units each), so a higher floor stretches the daily 10k-unit budget.
+    void setMinPollIntervalSecs(int secs);
+    int  minPollIntervalSecs() const { return m_minPollIntervalMs / 1000; }
+
     // OAuth device flow: call once credentials are set
     void startDeviceFlow();
 
@@ -81,7 +86,8 @@ private:
     QString m_deviceCode;
 
     bool m_connected = false;
-    int  m_pollingIntervalMs = 5000;
+    int  m_pollingIntervalMs = 10000;
+    int  m_minPollIntervalMs = 10000; // floor; never poll faster than this
 
     // Connect-time gating: the first poll returns recent chat history, which we
     // must never moderate. Anything before m_connectedAt is flagged historical.

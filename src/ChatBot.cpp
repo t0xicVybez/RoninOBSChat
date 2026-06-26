@@ -206,6 +206,9 @@ void ChatBot::loadConfig()
         m_youtube->setTokens(tokens);
     }
 
+    if (doc.contains("pollIntervalSecs"))
+        m_youtube->setMinPollIntervalSecs(doc["pollIntervalSecs"].toInt(10));
+
     if (doc.contains("commands"))
         m_commands->fromJson(doc["commands"].toArray());
 
@@ -230,6 +233,8 @@ void ChatBot::saveConfig()
         {"refreshToken", t.refreshToken},
         {"expiresAt",    QString::number(t.expiresAt)}
     };
+
+    doc["pollIntervalSecs"] = m_youtube->minPollIntervalSecs();
 
     doc["commands"] = m_commands->toJson();
     doc["timers"]   = m_timers->toJson();

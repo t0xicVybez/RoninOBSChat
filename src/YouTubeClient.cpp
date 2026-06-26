@@ -42,6 +42,12 @@ void YouTubeClient::setTokens(const OAuthTokens &tokens)
     m_tokens = tokens;
 }
 
+void YouTubeClient::setMinPollIntervalSecs(int secs)
+{
+    // Clamp to a sane range. YouTube's own minimum hint is ~5s.
+    m_minPollIntervalMs = qBound(5, secs, 300) * 1000;
+}
+
 bool YouTubeClient::isAuthenticated() const
 {
     return !m_tokens.accessToken.isEmpty() || !m_tokens.refreshToken.isEmpty();
@@ -207,7 +213,12 @@ void YouTubeClient::fetchLiveChatId()
             blog(LOG_WARNING, "[RoninOBSChat] Fetch broadcast failed: http=%d qterr=%s body=%s",
                  status, reply->errorString().toUtf8().constData(),
                  errBody.toUtf8().constData());
-            emit errorOccurred("Failed to fetch broadcast: " + reply->errorString());
+            if (errBody.contains("quotaExceeded"))
+                emit errorOccurred("YouTube API quota exceeded for today. It resets at "
+                                   "midnight US Pacific. (See README: request a quota increase "
+                                   "or raise the poll interval.)");
+            else
+                emit errorOccurred("Failed to fetch broadcast: " + reply->errorString());
             return;
         }
         auto doc = QJsonDocument::fromJson(reply->readAll()).object();
@@ -255,13 +266,22 @@ void YouTubeClient::pollMessages()
             blog(LOG_WARNING, "[RoninOBSChat] Poll failed: http=%d qterr=%s body=%s",
                  status, reply->errorString().toUtf8().constData(),
                  errBody.toUtf8().constData());
-            emit errorOccurred("Poll error: " + reply->errorString());
+            // Quota is exhausted for the day — stop polling so we don't keep
+            // hammering the API (which only makes it worse) and disconnect.
+            if (errBody.contains("quotaExceeded")) {
+                emit errorOccurred("YouTube API quota exceeded — stopping. It resets at "
+                                   "midnight US Pacific.");
+                disconnectFromStream();
+            } else {
+                emit errorOccurred("Poll error: " + reply->errorString());
+            }
             return;
         }
 
         auto doc = QJsonDocument::fromJson(reply->readAll()).object();
         m_nextPageToken = doc["nextPageToken"].toString();
-        int interval = doc["pollingIntervalMillis"].toInt(5000);
+        // Honour YouTube's hint but never poll faster than our configured floor.
+        int interval = qMax(doc["pollingIntervalMillis"].toInt(5000), m_minPollIntervalMs);
         m_pollingIntervalMs = interval;
         m_pollTimer->setInterval(interval);
 

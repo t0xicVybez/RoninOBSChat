@@ -132,6 +132,25 @@ so the plugin tracks every action it takes and lets you reverse it:
 
 ---
 
+## API Quota
+
+The plugin uses the YouTube Data API, which has a **free quota of 10,000 units per
+day** (resets at midnight US Pacific). Each chat poll costs ~5 units and each
+timeout/ban/delete costs ~50. Continuous polling is the main cost, so the plugin
+lets you tune it:
+
+- **Settings → YouTube → API Quota → Chat poll interval** — higher means fewer API
+  calls and less quota used, at the cost of slower command/AutoMod response. The
+  default of **10s** suits most streams; raise it for very long streams.
+- If you moderate a busy channel and hit the cap, request a quota increase in the
+  [Google Cloud Console](https://console.cloud.google.com/) under *APIs & Services →
+  YouTube Data API v3 → Quotas*.
+
+If quota is exhausted, the dock shows "YouTube API quota exceeded" and the bot
+stops polling until the daily reset.
+
+---
+
 ## Building from Source
 
 Requires: Git, CMake 3.28+, Visual Studio 2022 (Windows)
