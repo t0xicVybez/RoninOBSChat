@@ -369,7 +369,9 @@ void YouTubeClient::timeoutUser(const QString &channelId, int durationSeconds)
             return;
         }
         auto doc = QJsonDocument::fromJson(reply->readAll()).object();
-        QString banId = doc["id"].toString();
+        // YouTube returns the id with its trailing '=' already percent-encoded
+        // (%3D). Decode to the canonical form so we don't double-encode on lift.
+        QString banId = QUrl::fromPercentEncoding(doc["id"].toString().toUtf8());
         blog(LOG_INFO, "[RoninOBSChat] Timeout created: channel=%s banId=%s",
              channelId.toUtf8().constData(), banId.toUtf8().constData());
         emit banCreated(channelId, banId, true, durationSeconds);
@@ -409,7 +411,8 @@ void YouTubeClient::banUser(const QString &channelId)
             return;
         }
         auto doc = QJsonDocument::fromJson(reply->readAll()).object();
-        QString banId = doc["id"].toString();
+        // See note in timeoutUser: decode the percent-encoded id from YouTube.
+        QString banId = QUrl::fromPercentEncoding(doc["id"].toString().toUtf8());
         blog(LOG_INFO, "[RoninOBSChat] Ban created: channel=%s banId=%s",
              channelId.toUtf8().constData(), banId.toUtf8().constData());
         emit banCreated(channelId, banId, false, 0);
@@ -420,10 +423,11 @@ void YouTubeClient::liftBan(const QString &banId)
 {
     if (!m_connected || banId.isEmpty()) return;
 
+    // Normalise first (in case it still carries YouTube's %3D), then encode the
+    // id exactly once. Going through QUrlQuery would double-encode the '='.
+    QString canonical = QUrl::fromPercentEncoding(banId.toUtf8());
     QUrl url(kBansUrl);
-    QUrlQuery q;
-    q.addQueryItem("id", banId);
-    url.setQuery(q);
+    url.setQuery("id=" + QString::fromUtf8(QUrl::toPercentEncoding(canonical)));
 
     auto *reply = m_nam->deleteResource(authorizedRequest(url));
     connect(reply, &QNetworkReply::finished, this, [this, reply, banId]() {

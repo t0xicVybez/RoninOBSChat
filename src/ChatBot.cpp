@@ -77,6 +77,8 @@ void ChatBot::onMessagesReceived(const QList<ChatMessage> &messages)
                 m_youtube->deleteMessage(msg.id);
                 break;
             case AutoModAction::TimeoutUser:
+                // Always remove the offending message, then time the user out.
+                m_youtube->deleteMessage(msg.id);
                 // One active ban per user — don't stack on a message burst.
                 if (m_moderation->hasActiveBan(msg.authorChannelId)) {
                     blog(LOG_INFO, "[RoninOBSChat] Timeout skipped — %s already has an active ban",
@@ -89,6 +91,8 @@ void ChatBot::onMessagesReceived(const QList<ChatMessage> &messages)
                 }
                 break;
             case AutoModAction::BanUser:
+                // Always remove the offending message, then ban the user.
+                m_youtube->deleteMessage(msg.id);
                 if (m_moderation->hasActiveBan(msg.authorChannelId)) {
                     blog(LOG_INFO, "[RoninOBSChat] Ban skipped — %s already has an active ban",
                          msg.authorDisplayName.toUtf8().constData());
