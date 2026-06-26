@@ -55,8 +55,6 @@ ChatDock::ChatDock(ChatBot *bot, QWidget *parent)
             this, &ChatDock::onMessageReceived);
     connect(m_bot, &ChatBot::botSentMessage,
             this, &ChatDock::onBotSentMessage);
-    connect(m_bot, &ChatBot::autoModActionTaken,
-            this, &ChatDock::onAutoModAction);
     connect(m_bot->youtube(), &YouTubeClient::errorOccurred,
             this, [this](const QString &err) {
                 appendLine(QStringLiteral("<span style='color:#e05252'>⚠ %1</span>").arg(err.toHtmlEscaped()));
@@ -99,21 +97,6 @@ void ChatDock::onBotSentMessage(const QString &text)
         "<span style='color:#888'>: </span>"
         "<span>%1</span>"
     ).arg(text.toHtmlEscaped()));
-}
-
-void ChatDock::onAutoModAction(const ChatMessage &msg, const AutoModResult &result)
-{
-    QString action;
-    switch (result.action) {
-    case AutoModAction::DeleteMessage: action = "deleted"; break;
-    case AutoModAction::TimeoutUser:   action = QStringLiteral("timed out (%1s)").arg(result.timeoutSecs); break;
-    case AutoModAction::BanUser:       action = "banned"; break;
-    default: break;
-    }
-
-    appendLine(QStringLiteral(
-        "<span style='color:#e07c52'>🛡 AutoMod: %1 %2 [%3]</span>"
-    ).arg(msg.authorDisplayName.toHtmlEscaped(), action, result.matchedRule.toHtmlEscaped()));
 }
 
 void ChatDock::onConnectClicked()

@@ -4,7 +4,6 @@ A native OBS Studio plugin that connects to your YouTube live chat and provides:
 
 - **Chat Commands** — respond to `!commands` with custom replies, per-user cooldowns, and permission levels
 - **Timed Messages** — automatically post messages on a configurable interval
-- **AutoMod** — keyword/regex rules that can delete messages, timeout, or ban users
 
 ---
 
@@ -98,18 +97,6 @@ In Settings → Timers, add a row with:
 | Interval | How often to post it (seconds) |
 
 Timers start automatically when you connect and stop when you disconnect.
-
-### AutoMod
-
-In Settings → AutoMod, add a rule with:
-
-| Field | Description |
-|---|---|
-| Pattern | A plain keyword or a regular expression |
-| Regex | Enable if the pattern is a regex |
-| Case sensitive | Toggle case sensitivity |
-| Action | Delete message / Timeout user / Ban user |
-| Timeout (s) | Duration for timeout actions |
 
 ---
 

@@ -15,7 +15,6 @@ private slots:
     void onConnectionChanged(bool connected);
     void onMessageReceived(const ChatMessage &msg);
     void onBotSentMessage(const QString &text);
-    void onAutoModAction(const ChatMessage &msg, const AutoModResult &result);
     void onConnectClicked();
     void onSettingsClicked();
 

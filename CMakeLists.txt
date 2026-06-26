@@ -31,7 +31,6 @@ target_sources(
     src/YouTubeClient.cpp
     src/CommandHandler.cpp
     src/TimedMessages.cpp
-    src/AutoMod.cpp
     src/ui/ChatDock.cpp
     src/ui/SettingsDialog.cpp
 )

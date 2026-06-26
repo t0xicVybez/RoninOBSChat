@@ -12,7 +12,6 @@ ChatBot::ChatBot(QObject *parent)
     , m_youtube(new YouTubeClient(this))
     , m_commands(new CommandHandler(this))
     , m_timers(new TimedMessages(this))
-    , m_automod(new AutoMod(this))
 {
     connect(m_youtube, &YouTubeClient::messagesReceived,
             this, &ChatBot::onMessagesReceived);
@@ -30,25 +29,6 @@ void ChatBot::onMessagesReceived(const QList<ChatMessage> &messages)
 {
     for (const auto &msg : messages) {
         emit messageReceived(msg);
-
-        // AutoMod runs before command processing
-        AutoModResult result = m_automod->check(msg);
-        if (result.action != AutoModAction::None) {
-            switch (result.action) {
-            case AutoModAction::DeleteMessage:
-                m_youtube->deleteMessage(msg.id);
-                break;
-            case AutoModAction::TimeoutUser:
-                m_youtube->timeoutUser(msg.authorChannelId, result.timeoutSecs);
-                break;
-            case AutoModAction::BanUser:
-                m_youtube->banUser(msg.authorChannelId);
-                break;
-            default: break;
-            }
-            emit autoModActionTaken(msg, result);
-            continue; // Skip command processing for moderated messages
-        }
 
         // Command processing
         QString response;
@@ -115,9 +95,6 @@ void ChatBot::loadConfig()
     if (doc.contains("timers"))
         m_timers->fromJson(doc["timers"].toArray());
 
-    if (doc.contains("automod"))
-        m_automod->fromJson(doc["automod"].toArray());
-
     blog(LOG_INFO, "[RoninOBSChat] Config loaded from %s", path.toUtf8().constData());
 }
 
@@ -136,7 +113,6 @@ void ChatBot::saveConfig()
 
     doc["commands"] = m_commands->toJson();
     doc["timers"]   = m_timers->toJson();
-    doc["automod"]  = m_automod->toJson();
 
     QString path = configFilePath();
     QDir().mkpath(QFileInfo(path).absolutePath());
