@@ -51,6 +51,11 @@ signals:
                     bool temporary, int durationSeconds);
     void banLifted(const QString &banId);
 
+    // Emitted when a ban/timeout POST is rejected, so the caller can drop the
+    // optimistic moderation-log entry it created (otherwise it would falsely
+    // mark the user as banned and block all future actions on them).
+    void banFailed(const QString &channelId);
+
     // Device-flow progress
     void deviceFlowReady(const QString &verificationUrl, const QString &userCode);
     void deviceFlowCompleted();

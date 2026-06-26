@@ -37,6 +37,11 @@ public:
 
     void removeByBanId(const QString &banId);
 
+    // Drop the newest still-pending (no banId yet) entry for a channel. Called
+    // when a ban/timeout POST fails so a failed action can't falsely mark the
+    // user as banned forever.
+    void removePendingByChannel(const QString &channelId);
+
     // True if this channel already has an unexpired timeout / active ban (or a
     // pending one awaiting its id). Used to avoid re-banning on every message.
     bool hasActiveBan(const QString &channelId) const;

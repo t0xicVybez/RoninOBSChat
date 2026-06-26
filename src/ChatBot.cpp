@@ -32,6 +32,8 @@ ChatBot::ChatBot(QObject *parent)
             });
     connect(m_youtube, &YouTubeClient::banLifted,
             m_moderation, &ModerationLog::removeByBanId);
+    connect(m_youtube, &YouTubeClient::banFailed,
+            m_moderation, &ModerationLog::removePendingByChannel);
 }
 
 // Bounded de-dup: remember up to 2000 recent message ids so a message is only
@@ -65,13 +67,21 @@ void ChatBot::onMessagesReceived(const QList<ChatMessage> &messages)
         // ── AutoMod (mods/owner are exempt inside check()) ──────────────────
         AutoModResult result = m_automod->check(msg);
         if (result.action != AutoModAction::None) {
+            blog(LOG_INFO, "[RoninOBSChat] AutoMod match: user=%s rule=%s action=%d",
+                 msg.authorDisplayName.toUtf8().constData(),
+                 result.matchedRule.toUtf8().constData(),
+                 static_cast<int>(result.action));
+
             switch (result.action) {
             case AutoModAction::DeleteMessage:
                 m_youtube->deleteMessage(msg.id);
                 break;
             case AutoModAction::TimeoutUser:
                 // One active ban per user — don't stack on a message burst.
-                if (!m_moderation->hasActiveBan(msg.authorChannelId)) {
+                if (m_moderation->hasActiveBan(msg.authorChannelId)) {
+                    blog(LOG_INFO, "[RoninOBSChat] Timeout skipped — %s already has an active ban",
+                         msg.authorDisplayName.toUtf8().constData());
+                } else {
                     m_youtube->timeoutUser(msg.authorChannelId, result.timeoutSecs);
                     m_moderation->recordPending(msg.authorChannelId, msg.authorDisplayName,
                                                 "Timeout", result.matchedRule,
@@ -79,7 +89,10 @@ void ChatBot::onMessagesReceived(const QList<ChatMessage> &messages)
                 }
                 break;
             case AutoModAction::BanUser:
-                if (!m_moderation->hasActiveBan(msg.authorChannelId)) {
+                if (m_moderation->hasActiveBan(msg.authorChannelId)) {
+                    blog(LOG_INFO, "[RoninOBSChat] Ban skipped — %s already has an active ban",
+                         msg.authorDisplayName.toUtf8().constData());
+                } else {
                     m_youtube->banUser(msg.authorChannelId);
                     m_moderation->recordPending(msg.authorChannelId, msg.authorDisplayName,
                                                 "Ban", result.matchedRule, false, 0);

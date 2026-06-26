@@ -43,6 +43,17 @@ void ModerationLog::removeByBanId(const QString &banId)
     }
 }
 
+void ModerationLog::removePendingByChannel(const QString &channelId)
+{
+    for (int i = m_entries.size() - 1; i >= 0; --i) {
+        if (m_entries[i].channelId == channelId && m_entries[i].banId.isEmpty()) {
+            m_entries.removeAt(i);
+            emit changed();
+            return;
+        }
+    }
+}
+
 bool ModerationLog::hasActiveBan(const QString &channelId) const
 {
     const QDateTime now = QDateTime::currentDateTimeUtc();

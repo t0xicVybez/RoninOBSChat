@@ -320,10 +320,17 @@ void YouTubeClient::deleteMessage(const QString &messageId)
     url.setQuery(q);
 
     auto *reply = m_nam->deleteResource(authorizedRequest(url));
-    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, messageId]() {
         reply->deleteLater();
-        if (reply->error() != QNetworkReply::NoError)
-            emit errorOccurred("Delete failed: " + QString::fromUtf8(reply->readAll()));
+        if (reply->error() != QNetworkReply::NoError) {
+            QString body = QString::fromUtf8(reply->readAll());
+            blog(LOG_WARNING, "[RoninOBSChat] Delete failed for %s: %s",
+                 messageId.toUtf8().constData(), body.toUtf8().constData());
+            emit errorOccurred("Delete failed: " + body);
+        } else {
+            blog(LOG_INFO, "[RoninOBSChat] Deleted message %s",
+                 messageId.toUtf8().constData());
+        }
     });
 }
 
@@ -345,17 +352,27 @@ void YouTubeClient::timeoutUser(const QString &channelId, int durationSeconds)
     q.addQueryItem("part", "snippet");
     url.setQuery(q);
 
+    blog(LOG_INFO, "[RoninOBSChat] Timeout request: channel=%s duration=%ds",
+         channelId.toUtf8().constData(), durationSeconds);
+
     auto *reply = m_nam->post(authorizedRequest(url),
                               QJsonDocument(body).toJson(QJsonDocument::Compact));
     connect(reply, &QNetworkReply::finished, this,
             [this, reply, channelId, durationSeconds]() {
         reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError) {
-            emit errorOccurred("Timeout failed: " + QString::fromUtf8(reply->readAll()));
+            QString errBody = QString::fromUtf8(reply->readAll());
+            blog(LOG_WARNING, "[RoninOBSChat] Timeout failed for %s: %s",
+                 channelId.toUtf8().constData(), errBody.toUtf8().constData());
+            emit banFailed(channelId);
+            emit errorOccurred("Timeout failed: " + errBody);
             return;
         }
         auto doc = QJsonDocument::fromJson(reply->readAll()).object();
-        emit banCreated(channelId, doc["id"].toString(), true, durationSeconds);
+        QString banId = doc["id"].toString();
+        blog(LOG_INFO, "[RoninOBSChat] Timeout created: channel=%s banId=%s",
+             channelId.toUtf8().constData(), banId.toUtf8().constData());
+        emit banCreated(channelId, banId, true, durationSeconds);
     });
 }
 
@@ -376,16 +393,26 @@ void YouTubeClient::banUser(const QString &channelId)
     q.addQueryItem("part", "snippet");
     url.setQuery(q);
 
+    blog(LOG_INFO, "[RoninOBSChat] Ban request: channel=%s",
+         channelId.toUtf8().constData());
+
     auto *reply = m_nam->post(authorizedRequest(url),
                               QJsonDocument(body).toJson(QJsonDocument::Compact));
     connect(reply, &QNetworkReply::finished, this, [this, reply, channelId]() {
         reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError) {
-            emit errorOccurred("Ban failed: " + QString::fromUtf8(reply->readAll()));
+            QString errBody = QString::fromUtf8(reply->readAll());
+            blog(LOG_WARNING, "[RoninOBSChat] Ban failed for %s: %s",
+                 channelId.toUtf8().constData(), errBody.toUtf8().constData());
+            emit banFailed(channelId);
+            emit errorOccurred("Ban failed: " + errBody);
             return;
         }
         auto doc = QJsonDocument::fromJson(reply->readAll()).object();
-        emit banCreated(channelId, doc["id"].toString(), false, 0);
+        QString banId = doc["id"].toString();
+        blog(LOG_INFO, "[RoninOBSChat] Ban created: channel=%s banId=%s",
+             channelId.toUtf8().constData(), banId.toUtf8().constData());
+        emit banCreated(channelId, banId, false, 0);
     });
 }
 
@@ -402,9 +429,23 @@ void YouTubeClient::liftBan(const QString &banId)
     connect(reply, &QNetworkReply::finished, this, [this, reply, banId]() {
         reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError) {
-            emit errorOccurred("Lift failed: " + QString::fromUtf8(reply->readAll()));
+            QString errBody = QString::fromUtf8(reply->readAll());
+            // A timeout that already expired (or a ban already lifted) no longer
+            // exists, so YouTube rejects the id. That's effectively success —
+            // drop it from the list instead of showing a scary error.
+            if (errBody.contains("invalidLiveChatBanId")) {
+                blog(LOG_INFO, "[RoninOBSChat] Lift: ban %s already expired/lifted",
+                     banId.toUtf8().constData());
+                emit errorOccurred("Timeout/ban already expired — removed from list.");
+                emit banLifted(banId);
+                return;
+            }
+            blog(LOG_WARNING, "[RoninOBSChat] Lift failed for %s: %s",
+                 banId.toUtf8().constData(), errBody.toUtf8().constData());
+            emit errorOccurred("Lift failed: " + errBody);
             return;
         }
+        blog(LOG_INFO, "[RoninOBSChat] Lifted ban %s", banId.toUtf8().constData());
         emit banLifted(banId);
     });
 }
