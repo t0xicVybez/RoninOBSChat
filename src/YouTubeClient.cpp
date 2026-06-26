@@ -368,13 +368,12 @@ void YouTubeClient::timeoutUser(const QString &channelId, int durationSeconds)
             emit errorOccurred("Timeout failed: " + errBody);
             return;
         }
-        auto doc = QJsonDocument::fromJson(reply->readAll()).object();
-        // The id is an opaque token that may itself contain percent-encoded
-        // characters (e.g. a trailing %3D). Keep it verbatim — liftBan() encodes
-        // it for the URL. Decoding it here corrupts the token.
+        QByteArray respBytes = reply->readAll();
+        auto doc = QJsonDocument::fromJson(respBytes).object();
         QString banId = doc["id"].toString();
-        blog(LOG_INFO, "[RoninOBSChat] Timeout created: channel=%s banId=%s",
+        blog(LOG_INFO, "[RoninOBSChat] Timeout created: channel=%s banId=[%s]",
              channelId.toUtf8().constData(), banId.toUtf8().constData());
+        blog(LOG_INFO, "[RoninOBSChat] Timeout raw response: %s", respBytes.constData());
         emit banCreated(channelId, banId, true, durationSeconds);
     });
 }
@@ -424,30 +423,22 @@ void YouTubeClient::liftBan(const QString &banId)
 {
     if (!m_connected || banId.isEmpty()) return;
 
-    // The ban id is an opaque token that may already contain percent-encoded
-    // characters (e.g. %3D). Encode the whole token for the query — escaping any
-    // '%' to %25 — so YouTube receives back the exact id it issued. Decoding it,
-    // or letting QUrlQuery touch it, corrupts the token -> invalidLiveChatBanId.
-    QUrl url(kBansUrl);
-    url.setQuery("id=" + QString::fromUtf8(QUrl::toPercentEncoding(banId)));
+    // Decode YouTube's token to its canonical form, then build the URL already
+    // percent-encoded via fromEncoded so the id is encoded exactly once on the
+    // wire (setQuery/QUrlQuery have surprising encoding behaviour for '=').
+    QString    canonicalId = QUrl::fromPercentEncoding(banId.toUtf8());
+    QByteArray encodedId   = QUrl::toPercentEncoding(canonicalId);
+    QUrl url = QUrl::fromEncoded(QByteArray(kBansUrl) + "?id=" + encodedId);
+
+    blog(LOG_INFO, "[RoninOBSChat] Lift request URL: %s", url.toEncoded().constData());
 
     auto *reply = m_nam->deleteResource(authorizedRequest(url));
-    connect(reply, &QNetworkReply::finished, this, [this, reply, banId]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, banId, url]() {
         reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError) {
             QString errBody = QString::fromUtf8(reply->readAll());
-            // A timeout that already expired (or a ban already lifted) no longer
-            // exists, so YouTube rejects the id. That's effectively success —
-            // drop it from the list instead of showing a scary error.
-            if (errBody.contains("invalidLiveChatBanId")) {
-                blog(LOG_INFO, "[RoninOBSChat] Lift: ban %s already expired/lifted",
-                     banId.toUtf8().constData());
-                emit errorOccurred("Timeout/ban already expired — removed from list.");
-                emit banLifted(banId);
-                return;
-            }
-            blog(LOG_WARNING, "[RoninOBSChat] Lift failed for %s: %s",
-                 banId.toUtf8().constData(), errBody.toUtf8().constData());
+            blog(LOG_WARNING, "[RoninOBSChat] Lift FAILED: url=%s err=%s",
+                 url.toEncoded().constData(), errBody.toUtf8().constData());
             emit errorOccurred("Lift failed: " + errBody);
             return;
         }
