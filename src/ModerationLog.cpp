@@ -76,9 +76,14 @@ QString ModerationLog::banIdForChannel(const QString &channelId) const
 
 QString ModerationLog::banIdForName(const QString &displayName) const
 {
+    // Match leniently: YouTube display names may or may not carry a leading '@'.
+    QString want = displayName;
+    if (want.startsWith('@')) want.remove(0, 1);
+
     for (int i = m_entries.size() - 1; i >= 0; --i) {
-        if (m_entries[i].displayName.compare(displayName, Qt::CaseInsensitive) == 0
-            && !m_entries[i].banId.isEmpty())
+        QString have = m_entries[i].displayName;
+        if (have.startsWith('@')) have.remove(0, 1);
+        if (have.compare(want, Qt::CaseInsensitive) == 0 && !m_entries[i].banId.isEmpty())
             return m_entries[i].banId;
     }
     return {};

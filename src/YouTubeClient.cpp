@@ -369,9 +369,10 @@ void YouTubeClient::timeoutUser(const QString &channelId, int durationSeconds)
             return;
         }
         auto doc = QJsonDocument::fromJson(reply->readAll()).object();
-        // YouTube returns the id with its trailing '=' already percent-encoded
-        // (%3D). Decode to the canonical form so we don't double-encode on lift.
-        QString banId = QUrl::fromPercentEncoding(doc["id"].toString().toUtf8());
+        // The id is an opaque token that may itself contain percent-encoded
+        // characters (e.g. a trailing %3D). Keep it verbatim — liftBan() encodes
+        // it for the URL. Decoding it here corrupts the token.
+        QString banId = doc["id"].toString();
         blog(LOG_INFO, "[RoninOBSChat] Timeout created: channel=%s banId=%s",
              channelId.toUtf8().constData(), banId.toUtf8().constData());
         emit banCreated(channelId, banId, true, durationSeconds);
@@ -411,8 +412,8 @@ void YouTubeClient::banUser(const QString &channelId)
             return;
         }
         auto doc = QJsonDocument::fromJson(reply->readAll()).object();
-        // See note in timeoutUser: decode the percent-encoded id from YouTube.
-        QString banId = QUrl::fromPercentEncoding(doc["id"].toString().toUtf8());
+        // See note in timeoutUser: keep the id verbatim, don't decode it.
+        QString banId = doc["id"].toString();
         blog(LOG_INFO, "[RoninOBSChat] Ban created: channel=%s banId=%s",
              channelId.toUtf8().constData(), banId.toUtf8().constData());
         emit banCreated(channelId, banId, false, 0);
@@ -423,11 +424,12 @@ void YouTubeClient::liftBan(const QString &banId)
 {
     if (!m_connected || banId.isEmpty()) return;
 
-    // Normalise first (in case it still carries YouTube's %3D), then encode the
-    // id exactly once. Going through QUrlQuery would double-encode the '='.
-    QString canonical = QUrl::fromPercentEncoding(banId.toUtf8());
+    // The ban id is an opaque token that may already contain percent-encoded
+    // characters (e.g. %3D). Encode the whole token for the query — escaping any
+    // '%' to %25 — so YouTube receives back the exact id it issued. Decoding it,
+    // or letting QUrlQuery touch it, corrupts the token -> invalidLiveChatBanId.
     QUrl url(kBansUrl);
-    url.setQuery("id=" + QString::fromUtf8(QUrl::toPercentEncoding(canonical)));
+    url.setQuery("id=" + QString::fromUtf8(QUrl::toPercentEncoding(banId)));
 
     auto *reply = m_nam->deleteResource(authorizedRequest(url));
     connect(reply, &QNetworkReply::finished, this, [this, reply, banId]() {

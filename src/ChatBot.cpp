@@ -140,6 +140,10 @@ bool ChatBot::handleModerationCommand(const ChatMessage &msg)
     }
 
     QString banId = m_moderation->banIdForName(target);
+    blog(LOG_INFO, "[RoninOBSChat] Mod command from %s: target='%s' -> banId=%s",
+         msg.authorDisplayName.toUtf8().constData(), target.toUtf8().constData(),
+         banId.isEmpty() ? "(none found)" : banId.toUtf8().constData());
+
     if (banId.isEmpty()) {
         m_youtube->sendMessage(QStringLiteral("No active timeout/ban found for %1.").arg(target));
         return true;
